@@ -11,6 +11,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    exe.linkSystemLibrary("c");
+    exe.linkSystemLibrary("ncurses");
+
     const deadcliPackage = b.dependency("deadcli", .{
         .target = target,
         .optimize = optimize,

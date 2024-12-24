@@ -3,6 +3,7 @@ const di = @import("deadcli");
 
 const err = @import("error.zig");
 const scat = @import("scat.zig");
+const pong = @import("pong.zig");
 
 pub fn main() void {
     //
@@ -22,6 +23,9 @@ pub fn main() void {
         }, .{
             .name = "scat",
             .desc = "Also Thiry One, using a 52 card deck approach 31 points as close as possible.",
+        }, .{
+            .name = "pong",
+            .desc = "A dynamic game with 2 paddles and a ball.",
         } },
         &.{},
         &.{},
@@ -56,9 +60,11 @@ pub fn main() void {
 
     var options: u64 = 0;
     if (args.scat) options |= 1;
+    if (args.pong) options |= 2;
 
     switch (options) {
         1 => scat.run(stdoutFile, stdinFile, prng.random()),
+        2 => pong.run(stdoutFile, prng.random()),
 
         0 => err.noCardgame(stderrFile),
         else => err.tooManyCardGames(stderrFile),

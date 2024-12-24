@@ -21,6 +21,7 @@
       ];
       # Run time (libs to link with)
       buildInputs = with pkgs; [
+        ncurses
       ];
 
     in {
