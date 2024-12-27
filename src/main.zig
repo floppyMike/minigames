@@ -41,6 +41,16 @@ pub fn main() void {
     }
 
     //
+    // Random Generator
+    //
+
+    var prng = std.Random.DefaultPrng.init(blk: {
+        var seed: u64 = undefined;
+        std.posix.getrandom(std.mem.asBytes(&seed)) catch err.failedToInitRandom();
+        break :blk seed;
+    });
+
+    //
     // Dispatch
     //
 
@@ -48,7 +58,7 @@ pub fn main() void {
     if (args.scat) options |= 1;
 
     switch (options) {
-        1 => scat.run(stdoutFile, stdinFile),
+        1 => scat.run(stdoutFile, stdinFile, prng.random()),
 
         0 => err.noCardgame(stderrFile),
         else => err.tooManyCardGames(stderrFile),

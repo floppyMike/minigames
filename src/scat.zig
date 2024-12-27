@@ -18,15 +18,7 @@ pub fn Scat(Out: type, In: type) type {
         screen: Screen.Screen(Out, In),
         deck: Deck,
 
-        pub fn init(out: Out, in: In) @This() {
-            var prng = std.Random.DefaultPrng.init(blk: {
-                var seed: u64 = undefined;
-                std.posix.getrandom(std.mem.asBytes(&seed)) catch err.failedToInitRandom();
-                break :blk seed;
-            });
-
-            const rand = prng.random();
-
+        pub fn init(out: Out, in: In, rand: std.Random) @This() {
             var game = @This(){
                 .deck = Deck.init(rand),
                 .screen = .{
@@ -136,9 +128,10 @@ pub fn Scat(Out: type, In: type) type {
 pub fn run(
     stdoutFile: anytype,
     stdinFile: anytype,
+    rand: std.Random,
 ) void {
     var game = Scat(@TypeOf(stdoutFile), @TypeOf(stdinFile))
-        .init(stdoutFile, stdinFile);
+        .init(stdoutFile, stdinFile, rand);
     var state: State = .Player;
 
     while (true) {
