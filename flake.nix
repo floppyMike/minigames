@@ -5,16 +5,12 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs = { self, nixpkgs, ... }@inputs:
+  outputs = { self, nixpkgs, ... }:
     let
       pkgs = import nixpkgs {
         system = "x86_64-linux";
         config.allowUnfree = true;
       };
-      # Dev time (developing tools)
-      devInputs = with pkgs; [
-        zls
-      ];
       # Build time (build tools; header libs)
       nativeBuildInputs = with pkgs; [
         zig
@@ -29,11 +25,11 @@
     devShell.x86_64-linux = pkgs.mkShell.override { stdenv = pkgs.clangStdenv; } {
       name = "deadcards";
       inherit buildInputs;
-      nativeBuildInputs = nativeBuildInputs ++ devInputs;
+      inherit nativeBuildInputs;
     };
 
     # Utilized by `nix build`
-    defaultPackage.x86_64-linux = pkgs.clangStdenv.mkDerivation rec {
+    defaultPackage.x86_64-linux = pkgs.clangStdenv.mkDerivation {
       pname = "deadcards";
       version = "0.1.0";
       src = ./.;
