@@ -1,6 +1,6 @@
 .{
-    .name = "deadcards",
-    .version = "0.0.0",
+    .name = "minigames",
+    .version = "1.0.0",
 
     .dependencies = .{
         .deadsimple = .{
