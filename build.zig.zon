@@ -3,8 +3,8 @@
     .version = "0.0.0",
 
     .dependencies = .{
-        .deadcli = .{
-            .path = "extern/deadcli",
+        .deadsimple = .{
+            .path = "extern/deadsimple",
         },
     },
 

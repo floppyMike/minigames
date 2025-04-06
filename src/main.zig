@@ -1,5 +1,5 @@
 const std = @import("std");
-const di = @import("deadcli");
+const cli = @import("deadsimple").cli;
 
 const err = @import("error.zig");
 const scat = @import("scat.zig");
@@ -14,8 +14,7 @@ pub fn main() void {
     const stderrFile = std.io.getStdErr().writer();
     const stdinFile = std.io.getStdIn().reader();
 
-    const Args = di.ArgStruct(
-        "deadcards",
+    const Args = cli.ArgStruct(
         "A collection of card games for an ANSI based terminal.",
         &.{ .{
             .name = "help",
@@ -40,7 +39,7 @@ pub fn main() void {
     const args = parsedArgs.args;
 
     if (args.help) {
-        Args.displayHelp(stdoutFile) catch err.termIOError();
+        Args.displayHelp(stdoutFile, std.os.argv[0]) catch err.termIOError();
         return;
     }
 
