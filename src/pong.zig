@@ -160,7 +160,7 @@ pub fn Pong() type {
 
             // Draw Border
             _ = c.box(self.gamewin, 0, 0);
-            _ = c.mvwaddstr(self.gamewin, 0, 1, "Pong: Down(j), Up(k); Angle from ball to paddle is reflection angle");
+            _ = c.mvwaddstr(self.gamewin, 0, 1, "Pong: Down(j), Up(k); Ball reflects randomly!");
             _ = c.mvwprintw(self.gamewin, gamerows - 1, 1, "Level: %llu", s.levelsSurvived);
 
             // Draw Player
