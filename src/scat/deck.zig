@@ -14,7 +14,7 @@ pub const Card = struct {
 };
 
 pub fn countScore(cards: [3]Card) u64 {
-    var total = std.mem.zeroes([@typeInfo(Type).Enum.fields.len]u64);
+    var total = std.mem.zeroes([@typeInfo(Type).@"enum".fields.len]u64);
     for (cards) |c| total[@intFromEnum(c.color)] += c.value;
     return std.mem.max(u64, &total);
 }

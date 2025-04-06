@@ -14,7 +14,7 @@ const PongError = error{
 };
 
 pub fn drawFilledBox(
-    win: [*c]c.WINDOW,
+    win: ?*c.WINDOW,
     fromx: u64,
     fromy: u64,
     tox: u64,
@@ -36,7 +36,7 @@ pub fn Pong() type {
         const uXY = struct { x: u64, y: u64 };
         const fXY = struct { x: f64, y: f64 };
 
-        gamewin: [*c]c.WINDOW,
+        gamewin: ?*c.WINDOW,
 
         playerPos: uXY,
         AIPos: uXY,
@@ -47,7 +47,7 @@ pub fn Pong() type {
 
         rand: std.Random,
 
-        pub fn init(gamewin: [*c]c.WINDOW, rand: std.Random, speed: f64) @This() {
+        pub fn init(gamewin: ?*c.WINDOW, rand: std.Random, speed: f64) @This() {
             return .{
                 .gamewin = gamewin,
                 .playerPos = .{

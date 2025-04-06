@@ -1,6 +1,7 @@
 .{
-    .name = "minigames",
+    .name = .minigames,
     .version = "1.0.0",
+    .fingerprint = 0x49f27ccba2b3ed06,
 
     .dependencies = .{
         .deadsimple = .{
