@@ -222,7 +222,7 @@ pub fn openscreen(
 
     var s = stats.Stats().init();
 
-    while (s.nextlevel()) |level| {
+    while (s.currentLevel()) |level| {
         var game = Pong().init(gamewin, rand, level.ballSpeed);
         var AItick: u64 = 0;
 
@@ -248,7 +248,11 @@ pub fn openscreen(
             std.time.sleep(std.time.ns_per_ms * 32);
 
             if (event) |e| switch (e) {
-                .PlayerScored => break,
+                .PlayerScored => {
+                    s.nextlevel();
+                    break;
+                },
+
                 .AIScored => return s,
             };
         }

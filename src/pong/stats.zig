@@ -5,7 +5,7 @@ pub const Level = struct {
     AItick: u64,
 };
 
-pub const levels: [5]Level = .{
+pub const levels = [_]Level{
     .{ .ballSpeed = 0.6, .AItick = 10 },
     .{ .ballSpeed = 0.7, .AItick = 8 },
     .{ .ballSpeed = 0.8, .AItick = 6 },
@@ -23,21 +23,17 @@ pub fn Stats() type {
             };
         }
 
-        pub fn nextlevel(self: *@This()) ?Level {
-            if (self.didWin()) return null;
-
-            const l = levels[self.levelsSurvived];
-            self.levelsSurvived += 1;
-            return l;
+        pub fn currentLevel(self: @This()) ?Level {
+            if (self.levelsSurvived < levels.len) return levels[self.levelsSurvived] else return null;
         }
 
-        pub fn didWin(self: @This()) bool {
-            return self.levelsSurvived >= levels.len;
+        pub fn nextlevel(self: *@This()) void {
+            self.levelsSurvived += 1;
         }
 
         pub fn printScore(self: @This(), stdoutFile: anytype) void {
             stdoutFile.print("{s}\nLevels survived: {d}\n", .{
-                if (self.didWin()) "You Won!" else "You Lose!",
+                if (self.levelsSurvived >= levels.len) "You Won!" else "You Lose!",
                 self.levelsSurvived,
             }) catch err.termIOError();
         }
