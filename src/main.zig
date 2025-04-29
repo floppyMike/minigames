@@ -65,7 +65,7 @@ pub fn main() void {
         1 => scat.run(stdoutFile, stdinFile, prng.random()),
         2 => pong.run(stdoutFile, prng.random()),
 
-        0 => err.noCardgame(stderrFile),
-        else => err.tooManyCardGames(stderrFile),
+        0 => err.noGame(stderrFile),
+        else => err.tooManyGames(stderrFile),
     }
 }
