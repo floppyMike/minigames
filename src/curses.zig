@@ -1,29 +1,154 @@
 const std = @import("std");
 const c = @import("c.zig").c;
+const err = @import("error.zig");
 
-const CursesError = error {
-    NcursesFailed,
-    ScreenSmall,
-};
+//
+// Curses Input
+//
 
-pub fn Curses(comptime gamerows: comptime_int, comptime gamecols: comptime_int) type {
+pub fn getInputNonBlockingFinal() c_int {
+    const ch = getInputNonBlocking();
+    _ = c.flushinp();
+    return ch;
+}
+
+pub fn getInputNonBlocking() c_int {
+    return c.getch();
+}
+
+pub fn Curses(comptime termrows: comptime_int, comptime termcols: comptime_int) type {
+    const pixelwidth = 2;
+
+    if (termcols < 2) @compileError("Game must be at least 2 wide.");
+    if (termrows < 2) @compileError("Game must be at least 2 high.");
+
+    if (termcols % pixelwidth != 0) @compileError("Game width must be even to allow block pixels.");
+
     return struct {
+        pub const worldcols = termcols / pixelwidth - 1;
+        pub const worldrows = termrows - 2;
+
+        //
+        // Collisions
+        //
+
+        pub const Bounds = packed struct(u4) {
+            left: bool,
+            up: bool,
+            down: bool,
+            right: bool,
+
+            const init: Bounds = @bitCast(@as(u4, 0));
+        };
+
+        pub fn check(x: i64, y: i64) Bounds {
+            var b = Bounds.init;
+
+            b.left = x < 0;
+            b.up = y < 0;
+            b.right = x >= worldcols;
+            b.down = y >= worldrows;
+
+            return b;
+        }
+
+        pub fn contains(x: i64, y: i64) bool {
+            return Bounds.init == check(x, y);
+        }
+
+        pub fn containsTerm(x: u64, y: u64) bool {
+            return x > 0 and y > 0 and x < termcols - 1 and y < termrows - 1;
+        }
+
+        pub fn checkF(x: f64, y: f64) Bounds {
+            return check(@intFromFloat(x), @intFromFloat(y));
+        }
+
+        pub fn containsF(x: f64, y: f64) bool {
+            return contains(@intFromFloat(x), @intFromFloat(y));
+        }
+
+        //
+        // Pixel Types
+        //
+
+        pub const WorldPixelF = struct {
+            x: f64,
+            y: f64,
+
+            pub fn init(x: f64, y: f64) !@This() {
+                return if (containsF(x, y)) .{ .x = x, .y = y } else error.OutOfBounds;
+            }
+
+            pub fn safeInit(x: f64, y: f64) !@This() {
+                return WorldPixelF.init(x + 0.5, y + 0.5); // Init in the middle to be more numerically resistant
+            }
+
+            pub fn shift(self: @This(), dx: f64, dy: f64) !@This() {
+                return WorldPixelF.init(self.x + dx, self.y + dy);
+            }
+
+            pub fn toInt(self: @This()) WorldPixel {
+                return WorldPixel.init(@intFromFloat(self.x), @intFromFloat(self.y)) catch unreachable; // Should always be in a valid position
+            }
+        };
+
+        pub const WorldPixel = struct {
+            x: i64,
+            y: i64,
+
+            pub fn init(x: i64, y: i64) !@This() {
+                return if (contains(x, y)) .{ .x = x, .y = y } else error.OutOfBounds;
+            }
+
+            pub fn shift(self: @This(), dx: i64, dy: i64) !@This() {
+                return WorldPixel.init(self.x + dx, self.y + dy);
+            }
+
+            pub fn termPixel(self: @This()) [pixelwidth]TermPixel {
+                var pixels: [pixelwidth]TermPixel = undefined;
+                inline for (&pixels, 0..) |*p, i| p.* = TermPixel.init(@intCast(self.x * pixelwidth + 1 + i), @intCast(self.y + 1)) catch unreachable; // WorldPixel is already in a valid spot
+                return pixels;
+            }
+        };
+
+        pub const TermPixel = struct {
+            x: u64,
+            y: u64,
+
+            pub fn init(x: u64, y: u64) !@This() {
+                return if (containsTerm(x, y)) .{ .x = x, .y = y } else error.OutOfBounds;
+            }
+        };
+
+        //
+        // Curses Terminal
+        //
+
         gamewin: ?*c.WINDOW,
 
-        pub fn init() CursesError!@This() {
-            if (c.initscr() == null) return error.NcursesFailed;
+        pub fn init(stdoutFile: anytype) ?@This() {
+            _ = c.initscr() orelse {
+                err.ncursesInitFail(stdoutFile);
+                return null;
+            };
+            errdefer _ = c.endwin();
 
             const wincols: u64 = @intCast(c.getmaxx(c.stdscr));
             const winrows: u64 = @intCast(c.getmaxy(c.stdscr));
 
-            if (winrows < gamerows or wincols < gamecols) return error.ScreenSmall;
+            if (winrows < termrows or wincols < termcols) {
+                err.screenToSmall(termrows, termcols, winrows, wincols, stdoutFile);
+                return null;
+            }
 
             _ = c.cbreak();
             _ = c.noecho();
             _ = c.curs_set(0);
             _ = c.nodelay(c.stdscr, true);
 
-            const gamewin = c.newwin(gamerows, gamecols, @intCast((winrows - gamerows) / 2), @intCast((wincols - gamecols) / 2));
+            const gamewin = c.newwin(termrows, termcols, @intCast((winrows - termrows) / 2), @intCast((wincols - termcols) / 2));
+            errdefer _ = c.delwin(gamewin);
 
             return .{ .gamewin = gamewin };
         }
@@ -52,19 +177,33 @@ pub fn Curses(comptime gamerows: comptime_int, comptime gamecols: comptime_int) 
         }
 
         pub fn writeSubtitle(self: @This(), str: [*c]const u8) void {
-            _ = c.mvwaddstr(self.gamewin, gamerows - 1, 1, str);
+            _ = c.mvwaddstr(self.gamewin, termrows - 1, 1, str);
         }
 
         pub fn writeSubtitleArgs(self: @This(), str: [*c]const u8, args: anytype) void {
-            _ = @call(std.builtin.CallModifier.auto, c.mvwprintw, .{ self.gamewin, gamerows - 1, 1, str } ++ args);
+            _ = @call(std.builtin.CallModifier.auto, c.mvwprintw, .{ self.gamewin, termrows - 1, 1, str } ++ args);
         }
 
-        pub fn drawPixel(self: @This(), x: u64, y: u64, ch: c.chtype) void {
-            _ = c.mvwaddch(self.gamewin, @intCast(y), @intCast(x), ch);
+        pub fn drawHalfPixel(self: @This(), xy: TermPixel, ch: c.chtype) void {
+            _ = c.mvwaddch(self.gamewin, @intCast(xy.y), @intCast(xy.x), ch);
         }
 
-        pub fn drawFilledBox(self: @This(), fromx: u64, fromy: u64, tox: u64, toy: u64, ch: c.chtype) void {
-            for (fromy..(toy + 1)) |y| for (fromx..(tox + 1)) |x| self.drawPixel(x, y, ch);
+        pub fn drawPixel(self: @This(), xy: WorldPixel, ch: c.chtype) void {
+            for (xy.termPixel()) |hp| self.drawHalfPixel(hp, ch);
+        }
+
+        pub fn drawFilledBox(self: @This(), from: WorldPixel, to: WorldPixel, ch: c.chtype) void {
+            const fy: usize = @intCast(from.y);
+            const ty: usize = @intCast(to.y);
+            const fx: usize = @intCast(from.x);
+            const tx: usize = @intCast(to.x);
+
+            for (fy..(ty + 1)) |y| for (fx..(tx + 1)) |x| {
+                const ix: i64 = @intCast(x);
+                const iy: i64 = @intCast(y);
+                const wp = WorldPixel.init(ix, iy) catch unreachable; // Rectangular sections should be valid
+                self.drawPixel(wp, ch);
+            };
         }
     };
 }

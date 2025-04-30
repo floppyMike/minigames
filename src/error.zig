@@ -24,6 +24,6 @@ pub fn ncursesInitFail(wrt: anytype) void {
     wrt.writeAll("Error: Failed ncurses init.") catch termIOError();
 }
 
-pub fn screenToSmall(rows: u64, cols: u64, wrt: anytype) void {
-    wrt.print("Error: Screen to small. Needs: ({d}x{d})\n", .{ rows, cols }) catch termIOError();
+pub fn screenToSmall(need_rows: u64, need_cols: u64, was_rows: u64, was_cols: u64, wrt: anytype) void {
+    wrt.print("Error: Screen to small. Needs: ({d}x{d}). Was: ({d}x{d})\n", .{ need_cols, need_rows, was_cols, was_rows }) catch termIOError();
 }
