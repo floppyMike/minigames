@@ -2,31 +2,14 @@ const c = @import("c.zig").c;
 
 const std = @import("std");
 const err = @import("error.zig");
+const scn = @import("curses.zig");
 
 const stats = @import("pong/stats.zig");
 
 const gamerows = 32;
 const gamecols = 96;
 
-const PongError = error{
-    ScreenSmall,
-    NcursesFailed,
-};
-
-pub fn drawFilledBox(
-    win: ?*c.WINDOW,
-    fromx: u64,
-    fromy: u64,
-    tox: u64,
-    toy: u64,
-    ch: c.chtype,
-) void {
-    for (fromy..(toy + 1)) |y| {
-        for (fromx..(tox + 1)) |x| {
-            _ = c.mvwaddch(win, @intCast(y), @intCast(x), ch);
-        }
-    }
-}
+const Screen = scn.Curses(gamerows, gamecols);
 
 pub fn Pong() type {
     return struct {
@@ -35,8 +18,6 @@ pub fn Pong() type {
 
         const uXY = struct { x: u64, y: u64 };
         const fXY = struct { x: f64, y: f64 };
-
-        gamewin: ?*c.WINDOW,
 
         playerPos: uXY,
         AIPos: uXY,
@@ -47,9 +28,8 @@ pub fn Pong() type {
 
         rand: std.Random,
 
-        pub fn init(gamewin: ?*c.WINDOW, rand: std.Random, speed: f64) @This() {
+        pub fn init(rand: std.Random, speed: f64) @This() {
             return .{
-                .gamewin = gamewin,
                 .playerPos = .{
                     .x = 2,
                     .y = (gamerows - paddlewidth) / 2,
@@ -154,18 +134,13 @@ pub fn Pong() type {
             return null;
         }
 
-        pub fn redraw(self: @This(), s: stats.Stats()) void {
-            // Clear Screen
-            _ = c.werase(self.gamewin);
-
-            // Draw Border
-            _ = c.box(self.gamewin, 0, 0);
-            _ = c.mvwaddstr(self.gamewin, 0, 1, "Pong: Down(j), Up(k); Ball reflects randomly!");
-            _ = c.mvwprintw(self.gamewin, gamerows - 1, 1, "Level: %llu", s.levelsSurvived);
+        pub fn render(self: @This(), screen: Screen, s: stats.Stats()) void {
+            screen.clear();
+            screen.writeTitle("Pong: Down(j), Up(k); Ball reflects randomly!");
+            screen.writeSubtitleArgs("Level: %llu", .{s.levelsSurvived});
 
             // Draw Player
-            drawFilledBox(
-                self.gamewin,
+            screen.drawFilledBox(
                 self.playerPos.x,
                 self.playerPos.y,
                 self.playerPos.x,
@@ -174,8 +149,7 @@ pub fn Pong() type {
             );
 
             // Draw AI
-            drawFilledBox(
-                self.gamewin,
+            screen.drawFilledBox(
                 self.AIPos.x,
                 self.AIPos.y,
                 self.AIPos.x,
@@ -184,8 +158,7 @@ pub fn Pong() type {
             );
 
             // Draw Ball
-            drawFilledBox(
-                self.gamewin,
+            screen.drawFilledBox(
                 @intFromFloat(self.ballPos.x),
                 @intFromFloat(self.ballPos.y),
                 @as(u64, @intFromFloat(self.ballPos.x)) + ballwidth - 1,
@@ -193,37 +166,17 @@ pub fn Pong() type {
                 c.NCURSES_ACS('0'),
             );
         }
-
-        pub fn refresh(self: @This()) void {
-            _ = c.refresh();
-            _ = c.wrefresh(self.gamewin);
-        }
     };
 }
 
-pub fn openscreen(
+pub fn rungame(
+    screen: Screen,
     rand: std.Random,
-) PongError!stats.Stats() {
-    if (c.initscr() == null) return error.NcursesFailed;
-    defer _ = c.endwin();
-
-    const cols: u64 = @intCast(c.getmaxx(c.stdscr));
-    const rows: u64 = @intCast(c.getmaxy(c.stdscr));
-
-    if (rows < gamerows or cols < gamecols) return error.ScreenSmall;
-
-    _ = c.cbreak();
-    _ = c.noecho();
-    _ = c.curs_set(0);
-    _ = c.nodelay(c.stdscr, true);
-
-    const gamewin = c.newwin(gamerows, gamecols, @intCast((rows - gamerows) / 2), @intCast((cols - gamecols) / 2));
-    defer _ = c.delwin(gamewin);
-
+) stats.Stats() {
     var s = stats.Stats().init();
 
     while (s.currentLevel()) |level| {
-        var game = Pong().init(gamewin, rand, level.ballSpeed);
+        var game = Pong().init(rand, level.ballSpeed);
         var AItick: u64 = 0;
 
         while (true) {
@@ -242,8 +195,8 @@ pub fn openscreen(
 
             const event = game.updateBall();
 
-            game.redraw(s);
-            game.refresh();
+            game.render(screen, s);
+            screen.refresh();
 
             std.time.sleep(std.time.ns_per_ms * 32);
 
@@ -265,7 +218,7 @@ pub fn run(
     stdoutFile: anytype,
     rand: std.Random,
 ) void {
-    const s = openscreen(rand) catch |e| {
+    var screen = Screen.init() catch |e| {
         switch (e) {
             error.ScreenSmall => err.screenToSmall(gamerows, gamecols, stdoutFile),
             error.NcursesFailed => err.ncursesInitFail(stdoutFile),
@@ -274,5 +227,8 @@ pub fn run(
         return;
     };
 
-    s.printScore(stdoutFile);
+    defer screen.deinit();
+
+    const res = rungame(screen, rand);
+    res.printScore(stdoutFile);
 }
