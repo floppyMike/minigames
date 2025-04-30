@@ -1,7 +1,6 @@
 const c = @import("c.zig").c;
 
 const std = @import("std");
-const err = @import("error.zig");
 const scn = @import("curses.zig");
 
 const stats = @import("pong/stats.zig");
@@ -11,9 +10,64 @@ const gamecols = 96;
 
 const Screen = scn.Curses(gamerows, gamecols);
 
+pub fn run(
+    stdoutFile: anytype,
+    rand: std.Random,
+) void {
+    var screen = Screen.init(stdoutFile) orelse return;
+    defer screen.deinit();
+
+    const res = rungame(screen, rand);
+    res.printScore(stdoutFile);
+}
+
+pub fn rungame(
+    screen: Screen,
+    rand: std.Random,
+) stats.Stats() {
+    var s = stats.Stats().init();
+
+    while (s.currentLevel()) |level| {
+        var game = Pong().init(level.ballSpeed);
+        var AItick: u64 = 0;
+
+        while (true) {
+            const ch = Screen.getInputNonBlockingFinal();
+
+            switch (ch) {
+                'q' => return s,
+                'j' => game.movePlayerDown(),
+                'k' => game.movePlayerUp(),
+                else => {},
+            }
+
+            AItick = (AItick + 1) % level.AItick;
+            if (AItick == 0) game.updateAI();
+
+            const event = game.updateBall(rand);
+
+            game.render(screen, s);
+            screen.refresh();
+
+            std.Thread.sleep(std.time.ns_per_ms * 32);
+
+            if (event) |e| switch (e) {
+                .PlayerScored => {
+                    s.nextlevel();
+                    break;
+                },
+
+                .AIScored => return s,
+            };
+        }
+    }
+
+    return s;
+}
+
 pub fn Pong() type {
     return struct {
-        const paddlewidth = 5;
+        const paddleheight = 5;
         const ballwidth = 2;
 
         const uXY = struct { x: u64, y: u64 };
@@ -26,30 +80,27 @@ pub fn Pong() type {
         ballSpeed: fXY,
         ballMagnatude: f64,
 
-        rand: std.Random,
-
-        pub fn init(rand: std.Random, speed: f64) @This() {
+        pub fn init(speed: f64) @This() {
             return .{
                 .playerPos = .{
                     .x = 2,
-                    .y = (gamerows - paddlewidth) / 2,
+                    .y = (gamerows - paddleheight) / 2,
                 },
                 .AIPos = .{
                     .x = gamecols - 3,
-                    .y = (gamerows - paddlewidth) / 2,
+                    .y = (gamerows - paddleheight) / 2,
                 },
                 .ballPos = .{
                     .x = (gamecols - ballwidth) / 2,
                     .y = (gamerows - ballwidth) / 2,
                 },
-                .rand = rand,
                 .ballSpeed = .{ .x = speed, .y = 0 },
                 .ballMagnatude = speed,
             };
         }
 
         pub fn movePlayerDown(self: *@This()) void {
-            if (self.playerPos.y + paddlewidth == gamerows - 1) return;
+            if (self.playerPos.y + paddleheight == gamerows - 1) return;
             self.playerPos.y += 1;
         }
 
@@ -59,16 +110,16 @@ pub fn Pong() type {
         }
 
         pub fn updateAI(self: *@This()) void {
-            const posdiff = @as(i64, @intFromFloat(self.ballPos.y)) - @as(i64, @intCast(self.AIPos.y + paddlewidth / 2));
+            const posdiff = @as(i64, @intFromFloat(self.ballPos.y)) - @as(i64, @intCast(self.AIPos.y + paddleheight / 2));
             const step = std.math.clamp(posdiff, -1, 1);
 
             const next: u64 = @intCast(@as(i64, @intCast(self.AIPos.y)) + step);
-            if (next + paddlewidth == gamerows or next == 0) return;
+            if (next + paddleheight == gamerows or next == 0) return;
 
             self.AIPos.y = next;
         }
 
-        pub fn updateBall(self: *@This()) ?enum {
+        pub fn updateBall(self: *@This(), rand: std.Random) ?enum {
             PlayerScored,
             AIScored,
         } {
@@ -81,7 +132,7 @@ pub fn Pong() type {
             const ballbottom = self.ballPos.y >= gamerows - 1;
 
             if (balltop or ballbottom) {
-                const r = std.math.pi * 6.0 / 16.0 * self.rand.float(f64) + std.math.pi / 16.0;
+                const r = std.math.pi * 6.0 / 16.0 * rand.float(f64) + std.math.pi / 16.0;
                 const x = self.ballMagnatude * @cos(r);
                 const y = self.ballMagnatude * @sin(r);
 
@@ -103,11 +154,11 @@ pub fn Pong() type {
 
             const ballleft = self.ballPos.x < 3;
             const ballright = self.ballPos.x + ballwidth >= gamecols - 2;
-            const ballplayer = self.ballPos.y >= playerfPosY and self.ballPos.y <= playerfPosY + paddlewidth;
-            const ballAI = self.ballPos.y >= AIfPosY and self.ballPos.y <= AIfPosY + paddlewidth;
+            const ballplayer = self.ballPos.y >= playerfPosY and self.ballPos.y <= playerfPosY + paddleheight;
+            const ballAI = self.ballPos.y >= AIfPosY and self.ballPos.y <= AIfPosY + paddleheight;
 
             if (ballleft or ballright) {
-                const r = std.math.pi * 14.0 / 16.0 * self.rand.float(f64) + std.math.pi / 16.0;
+                const r = std.math.pi * 14.0 / 16.0 * rand.float(f64) + std.math.pi / 16.0;
                 const x = self.ballMagnatude * @sin(r);
                 const y = self.ballMagnatude * @cos(r);
 
@@ -144,7 +195,7 @@ pub fn Pong() type {
                 self.playerPos.x,
                 self.playerPos.y,
                 self.playerPos.x,
-                self.playerPos.y + paddlewidth - 1,
+                self.playerPos.y + paddleheight - 1,
                 c.NCURSES_ACS('0'),
             );
 
@@ -153,7 +204,7 @@ pub fn Pong() type {
                 self.AIPos.x,
                 self.AIPos.y,
                 self.AIPos.x,
-                self.AIPos.y + paddlewidth - 1,
+                self.AIPos.y + paddleheight - 1,
                 c.NCURSES_ACS('0'),
             );
 
@@ -167,68 +218,4 @@ pub fn Pong() type {
             );
         }
     };
-}
-
-pub fn rungame(
-    screen: Screen,
-    rand: std.Random,
-) stats.Stats() {
-    var s = stats.Stats().init();
-
-    while (s.currentLevel()) |level| {
-        var game = Pong().init(rand, level.ballSpeed);
-        var AItick: u64 = 0;
-
-        while (true) {
-            const ch = c.getch();
-            _ = c.flushinp();
-
-            switch (ch) {
-                'q' => return s,
-                'j' => game.movePlayerDown(),
-                'k' => game.movePlayerUp(),
-                else => {},
-            }
-
-            AItick = (AItick + 1) % level.AItick;
-            if (AItick == 0) game.updateAI();
-
-            const event = game.updateBall();
-
-            game.render(screen, s);
-            screen.refresh();
-
-            std.time.sleep(std.time.ns_per_ms * 32);
-
-            if (event) |e| switch (e) {
-                .PlayerScored => {
-                    s.nextlevel();
-                    break;
-                },
-
-                .AIScored => return s,
-            };
-        }
-    }
-
-    return s;
-}
-
-pub fn run(
-    stdoutFile: anytype,
-    rand: std.Random,
-) void {
-    var screen = Screen.init() catch |e| {
-        switch (e) {
-            error.ScreenSmall => err.screenToSmall(gamerows, gamecols, stdoutFile),
-            error.NcursesFailed => err.ncursesInitFail(stdoutFile),
-        }
-
-        return;
-    };
-
-    defer screen.deinit();
-
-    const res = rungame(screen, rand);
-    res.printScore(stdoutFile);
 }

@@ -4,6 +4,7 @@ const cli = @import("deadsimple").cli;
 const err = @import("error.zig");
 const scat = @import("scat.zig");
 const pong = @import("pong.zig");
+const snake = @import("snake.zig");
 
 pub fn main() void {
     //
@@ -22,6 +23,9 @@ pub fn main() void {
         }, .{
             .name = "scat",
             .desc = "Also Thiry One, using a 52 card deck approach 31 points as close as possible.",
+        }, .{
+            .name = "snake",
+            .desc = "A dynamic game of eating apples and growing in length.",
         }, .{
             .name = "pong",
             .desc = "A dynamic game with 2 paddles and a ball.",
@@ -60,10 +64,12 @@ pub fn main() void {
     var options: u64 = 0;
     if (args.scat) options |= 1;
     if (args.pong) options |= 2;
+    if (args.snake) options |= 4;
 
     switch (options) {
         1 => scat.run(stdoutFile, stdinFile, prng.random()),
         2 => pong.run(stdoutFile, prng.random()),
+        4 => snake.run(stdoutFile, prng.random()),
 
         0 => err.noGame(stderrFile),
         else => err.tooManyGames(stderrFile),
