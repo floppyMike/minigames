@@ -14,28 +14,29 @@ pub fn run(
     stdoutFile: anytype,
     rand: std.Random,
 ) void {
-    var screen = Screen.init(stdoutFile) orelse return;
-    defer screen.deinit();
-
-    rungame(screen, rand);
+    const stats = rungame(stdoutFile, rand);
+    _ = stats;
 }
 
 pub fn rungame(
-    screen: Screen,
+    stdoutFile: anytype,
     rand: std.Random,
-) void {
+) ?Stats() {
+    var screen = Screen.init(stdoutFile) orelse return null;
+    defer screen.deinit();
+
     var game = Snake().init(rand);
     const stats = Stats().init();
 
     while (true) {
-        const ch = Screen.getInputNonBlocking();
+        const ch = scn.getInputNonBlocking();
 
         switch (ch) {
-            'q' => return,
-            'h' => game.tryTurnLeft(),
-            'j' => game.tryTurnDown(),
-            'k' => game.tryTurnUp(),
-            'l' => game.tryTurnRight(),
+            'q' => return stats,
+            'h' => game.player.tryTurnLeft(),
+            'j' => game.player.tryTurnDown(),
+            'k' => game.player.tryTurnUp(),
+            'l' => game.player.tryTurnRight(),
             else => {},
         }
 
@@ -46,69 +47,109 @@ pub fn rungame(
 
         std.Thread.sleep(std.time.ns_per_ms * 128);
     }
+
+    return stats;
 }
 
 pub fn Snake() type {
     return struct {
         const Direction = enum { LEFT, DOWN, UP, RIGHT };
+        const Body = std.BoundedArray(Screen.WorldPixel, gamerows * gamecols);
 
-        const Body = std.BoundedArray(uXY, gamerows * gamecols);
-        const uXY = struct {
-            x: u64,
-            y: u64,
+        const Player = struct {
+            direction: Direction,
+
+            body: Body,
+            body_end: usize,
+
+            pub fn init(x: i64, y: i64) !@This() {
+                var body = Body.init(2) catch unreachable;
+                body.set(0, try Screen.WorldPixel.init(x, y));
+                body.set(1, try Screen.WorldPixel.init(x, y));
+
+                return .{
+                    .direction = Direction.RIGHT,
+                    .body = body,
+                    .body_end = 0,
+                };
+            }
+
+            pub fn tryTurnLeft(self: *@This()) void {
+                if (self.direction == Direction.RIGHT) return;
+                self.direction = Direction.LEFT;
+            }
+
+            pub fn tryTurnDown(self: *@This()) void {
+                if (self.direction == Direction.UP) return;
+                self.direction = Direction.DOWN;
+            }
+
+            pub fn tryTurnUp(self: *@This()) void {
+                if (self.direction == Direction.DOWN) return;
+                self.direction = Direction.UP;
+            }
+
+            pub fn tryTurnRight(self: *@This()) void {
+                if (self.direction == Direction.LEFT) return;
+                self.direction = Direction.RIGHT;
+            }
+
+            pub fn move(self: *@This()) void {
+                const head = self.body.get(self.body_end);
+                self.body_end = (self.body_end + 1) % self.body.len;
+
+                const x = switch (self.direction) {
+                    Direction.LEFT => if (head.x == 0) Screen.worldcols - 1 else head.x - 1,
+                    Direction.RIGHT => if (head.x == Screen.worldcols - 1) 0 else head.x + 1,
+                    else => head.x,
+                };
+
+                const y = switch (self.direction) {
+                    Direction.UP => if (head.y == 0) Screen.worldrows - 1 else head.y - 1,
+                    Direction.DOWN => if (head.y == Screen.worldrows - 1) 0 else head.y + 1,
+                    else => head.y,
+                };
+
+                self.body.set(self.body_end, Screen.WorldPixel.init(x, y) catch unreachable); // Should be valid
+            }
+
+            pub fn render(self: @This(), screen: Screen) void {
+                for (self.body.slice()) |pos| screen.drawPixel(pos, c.NCURSES_ACS('0'));
+            }
+        };
+
+        const Apple = struct {
+            pos: Screen.WorldPixel,
+
+            pub fn init(x: i64, y: i64) !@This() {
+                return .{
+                    .pos = try Screen.WorldPixel.init(x, y),
+                };
+            }
 
             pub fn random(rand: std.Random) @This() {
                 return .{ .x = rand.intRangeAtMost(u64, 0, gamecols / 2 - 1) * 2 + 1, .y = rand.intRangeAtMost(u64, 1, gamerows - 2) };
             }
+
+            pub fn render(self: @This(), screen: Screen) void {
+                screen.drawPixel(self.pos, c.NCURSES_ACS('0'));
+            }
         };
 
-        player_body: Body, // We could do wacky optimizations but keeping it simple tends to make stuff also efficient
-        player_direction: Direction,
-        apple_pos: uXY,
+        player: Player,
+        apple: Apple,
 
         pub fn init(rand: std.Random) @This() {
-            var body = Body.init(1) catch unreachable;
-            body.set(0, uXY.random(rand));
+            _ = rand;
 
             return .{
-                .player_body = body,
-                .player_direction = Direction.RIGHT,
-                .apple_pos = uXY.random(rand),
+                .player = Player.init(0, 1) catch unreachable,
+                .apple = Apple.init(0, 0) catch unreachable,
             };
-        }
-
-        pub fn tryTurnLeft(self: *@This()) void {
-            if (self.player_direction == Direction.RIGHT) return;
-            self.player_direction = Direction.LEFT;
-        }
-
-        pub fn tryTurnDown(self: *@This()) void {
-            if (self.player_direction == Direction.UP) return;
-            self.player_direction = Direction.DOWN;
-        }
-
-        pub fn tryTurnUp(self: *@This()) void {
-            if (self.player_direction == Direction.DOWN) return;
-            self.player_direction = Direction.UP;
-        }
-
-        pub fn tryTurnRight(self: *@This()) void {
-            if (self.player_direction == Direction.LEFT) return;
-            self.player_direction = Direction.RIGHT;
         }
 
         pub fn updateGame(self: *@This()) void {
-            const pbody = self.player_body.slice();
-
-            // Move player
-            var playerfront = pbody[0];
-            pbody[0] = switch (self.player_direction) {
-                Direction.LEFT => .{ .x = if (playerfront.x == 1) gamecols - 3 else playerfront.x - 2, .y = playerfront.y },
-                Direction.DOWN => .{ .x = playerfront.x, .y = if (playerfront.y >= gamerows - 2) 1 else playerfront.y + 1 },
-                Direction.UP => .{ .x = playerfront.x, .y = if (playerfront.y == 1) gamerows - 2 else playerfront.y - 1 },
-                Direction.RIGHT => .{ .x = if (playerfront.x >= gamecols - 3) 1 else playerfront.x + 2, .y = playerfront.y },
-            };
-            for (1..pbody.len) |i| std.mem.swap(uXY, &pbody[i], &playerfront);
+            self.player.move();
         }
 
         pub fn render(self: @This(), screen: Screen, stat: Stats()) void {
@@ -116,14 +157,15 @@ pub fn Snake() type {
             screen.writeTitle("Snake: Down(j), Up(k), Left(h), Right(l)");
             screen.writeSubtitleArgs("Apples eaten: %llu", .{stat.apples_eaten});
 
-            // Draw Player
-            for (self.player_body.slice()) |pos| screen.drawPixel(pos.x, pos.y, pixelwidth, c.NCURSES_ACS('0'));
-
-            // Draw Apple
-            screen.drawPixel(self.apple_pos.x, self.apple_pos.y, pixelwidth, c.NCURSES_ACS('0'));
+            self.player.render(screen);
+            self.apple.render(screen);
         }
     };
 }
+
+//
+// Stats
+//
 
 pub fn Stats() type {
     return struct {
