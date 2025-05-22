@@ -28,6 +28,8 @@ pub fn Curses(comptime termrows: comptime_int, comptime termcols: comptime_int) 
         pub const worldcols = termcols / pixelwidth - 1;
         pub const worldrows = termrows - 2;
 
+        pub const worldarea = worldcols * worldrows;
+
         //
         // Collisions
         //
@@ -99,6 +101,14 @@ pub fn Curses(comptime termrows: comptime_int, comptime termcols: comptime_int) 
 
             pub fn init(x: i64, y: i64) !@This() {
                 return if (contains(x, y)) .{ .x = x, .y = y } else error.OutOfBounds;
+            }
+
+            pub fn linearPos(self: @This()) u64 {
+                return @intCast(self.x + self.y * worldcols);
+            }
+
+            pub fn fromLinearPos(xy: u64) !@This() {
+                return WorldPixel.init(@intCast(xy % worldcols), @intCast(xy / worldcols));
             }
 
             pub fn shift(self: @This(), dx: i64, dy: i64) !@This() {
