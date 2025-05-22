@@ -156,6 +156,7 @@ pub fn Curses(comptime termrows: comptime_int, comptime termcols: comptime_int) 
             _ = c.noecho();
             _ = c.curs_set(0);
             _ = c.nodelay(c.stdscr, true);
+            _ = c.keypad(c.stdscr, true); // Enable arrow keys
 
             const gamewin = c.newwin(termrows, termcols, @intCast((winrows - termrows) / 2), @intCast((wincols - termcols) / 2));
             errdefer _ = c.delwin(gamewin);
