@@ -8,12 +8,16 @@ const snake = @import("snake.zig");
 
 pub fn main() void {
     //
-    // Args
+    // IO
     //
 
-    const stdoutFile = std.io.getStdOut().writer();
-    const stderrFile = std.io.getStdErr().writer();
-    const stdinFile = std.io.getStdIn().reader();
+    var buferr: [512]u8 = undefined;
+    var stderr = std.fs.File.stderr().writer(&buferr);
+    defer stderr.interface.flush() catch |e| err.termIOError(e);
+
+    //
+    // Args
+    //
 
     const Args = cli.ArgStruct(
         "A collection of card games for an ANSI based terminal.",
@@ -36,42 +40,33 @@ pub fn main() void {
     );
 
     const parsedArgs = Args.parseArgs(std.os.argv[1..]) catch |e| {
-        err.unknownCliError(e, stderrFile);
+        err.unknownCliError(e, &stderr.interface);
         return;
     };
 
     const args = parsedArgs.args;
 
     if (args.help) {
-        Args.displayHelp(stdoutFile, std.os.argv[0]) catch err.termIOError();
+        Args.displayHelp(&stderr.interface, std.os.argv[0]) catch |e| err.termIOError(e);
         return;
     }
-
-    //
-    // Random Generator
-    //
-
-    var prng = std.Random.DefaultPrng.init(blk: {
-        var seed: u64 = undefined;
-        std.posix.getrandom(std.mem.asBytes(&seed)) catch err.failedToInitRandom();
-        break :blk seed;
-    });
-
-    //
-    // Dispatch
-    //
 
     var options: u64 = 0;
     if (args.scat) options |= 1;
     if (args.pong) options |= 2;
     if (args.snake) options |= 4;
 
-    switch (options) {
-        1 => scat.run(stdoutFile, stdinFile, prng.random()),
-        2 => pong.run(stdoutFile, prng.random()),
-        4 => snake.run(stdoutFile, prng.random()),
+    var ctxErr: err.CriticalErrorContext = undefined;
 
-        0 => err.noGame(stderrFile),
-        else => err.tooManyGames(stderrFile),
-    }
+    _ = switch (options) {
+        1 => scat.run(),
+        2 => pong.run(&ctxErr),
+        4 => snake.run(&ctxErr),
+
+        0 => err.noGame(&stderr.interface),
+        else => err.tooManyGames(&stderr.interface),
+    } catch |e| switch (e) {
+        error.CursesInitFail => err.ncursesInitFail(&stderr.interface),
+        error.ScreenToSmall => err.screenToSmall(ctxErr.ScreenToSmall.need_rows, ctxErr.ScreenToSmall.need_cols, ctxErr.ScreenToSmall.was_rows, ctxErr.ScreenToSmall.was_cols, &stderr.interface),
+    };
 }

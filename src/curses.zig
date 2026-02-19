@@ -137,19 +137,22 @@ pub fn Curses(comptime termrows: comptime_int, comptime termcols: comptime_int) 
 
         gamewin: ?*c.WINDOW,
 
-        pub fn init(stdoutFile: anytype) ?@This() {
-            _ = c.initscr() orelse {
-                err.ncursesInitFail(stdoutFile);
-                return null;
-            };
+        pub fn init(ctx: *err.CriticalErrorContext) err.CriticalError!@This() {
+            _ = c.initscr() orelse return err.CriticalError.CursesInitFail;
             errdefer _ = c.endwin();
 
             const wincols: u64 = @intCast(c.getmaxx(c.stdscr));
             const winrows: u64 = @intCast(c.getmaxy(c.stdscr));
 
             if (winrows < termrows or wincols < termcols) {
-                err.screenToSmall(termrows, termcols, winrows, wincols, stdoutFile);
-                return null;
+                ctx.ScreenToSmall = .{
+                    .need_rows = termrows,
+                    .need_cols = termcols,
+                    .was_rows = winrows,
+                    .was_cols = wincols,
+                };
+
+                return err.CriticalError.ScreenToSmall;
             }
 
             _ = c.cbreak();

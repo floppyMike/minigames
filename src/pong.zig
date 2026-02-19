@@ -3,6 +3,8 @@ const c = @import("c.zig").c;
 const std = @import("std");
 const scn = @import("curses.zig");
 const err = @import("error.zig");
+const console = @import("console.zig");
+const random = @import("prng.zig");
 
 const Screen = scn.Curses(32, 96);
 
@@ -10,19 +12,27 @@ const Screen = scn.Curses(32, 96);
 // Game General
 //
 
-pub fn run(
-    stdoutFile: anytype,
-    rand: std.Random,
-) void {
-    const res = rungame(stdoutFile, rand) orelse return;
-    res.printScore(stdoutFile);
+pub fn run(ctx: *err.CriticalErrorContext) err.CriticalError!void {
+    const res = try rungame(ctx);
+
+    var bufout: [512]u8 = undefined;
+    var bufin: [512]u8 = undefined;
+    var io = console.init(&bufout, &bufin);
+    defer io.flush();
+
+    const stat = res.getStat();
+
+    io.print("{s}\nLevels survived: {d}\n", .{
+        if (stat.won) "You Won!" else "You Lose!",
+        stat.levelIdx,
+    });
 }
 
-pub fn rungame(
-    stdoutFile: anytype,
-    rand: std.Random,
-) ?Stats() {
-    var screen = Screen.init(stdoutFile) orelse return null;
+pub fn rungame(ctx: *err.CriticalErrorContext) err.CriticalError!Stats() {
+    var prng = random.init();
+    const rand = prng.random();
+
+    var screen = try Screen.init(ctx);
     defer screen.deinit();
 
     var s = Stats().init();
@@ -323,11 +333,8 @@ pub fn Stats() type {
             self.levelsSurvived += 1;
         }
 
-        pub fn printScore(self: @This(), stdoutFile: anytype) void {
-            stdoutFile.print("{s}\nLevels survived: {d}\n", .{
-                if (self.levelsSurvived >= levels.len) "You Won!" else "You Lose!",
-                self.levelsSurvived,
-            }) catch err.termIOError();
+        pub fn getStat(self: @This()) struct { won: bool, levelIdx: u64 } {
+            return .{ .won = self.levelsSurvived >= levels.len, .levelIdx = self.levelsSurvived };
         }
     };
 }

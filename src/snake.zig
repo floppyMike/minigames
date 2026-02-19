@@ -3,6 +3,8 @@ const c = @import("c.zig").c;
 const std = @import("std");
 const scn = @import("curses.zig");
 const err = @import("error.zig");
+const random = @import("prng.zig");
+const console = @import("console.zig");
 
 const gamerows = 32;
 const gamecols = 96;
@@ -11,19 +13,24 @@ const pixelwidth = 2;
 const WorldSpace = scn.WorldSpace(gamecols, gamerows, pixelwidth);
 const Screen = scn.Curses(gamerows, gamecols);
 
-pub fn run(
-    stdoutFile: anytype,
-    rand: std.Random,
-) void {
-    const stats = rungame(stdoutFile, rand) orelse return;
-    stats.printScore(stdoutFile);
+pub fn run(ctx: *err.CriticalErrorContext) err.CriticalError!void {
+    const stats = try rungame(ctx);
+
+    var bufout: [512]u8 = undefined;
+    var bufin: [512]u8 = undefined;
+    var io = console.init(&bufout, &bufin);
+    defer io.flush();
+
+    const stat = stats.getStat();
+
+    io.print("Apples eaten: {d}\n", .{stat.eaten});
 }
 
-pub fn rungame(
-    stdoutFile: anytype,
-    rand: std.Random,
-) ?Stats() {
-    var screen = Screen.init(stdoutFile) orelse return null;
+pub fn rungame(ctx: *err.CriticalErrorContext) err.CriticalError!Stats() {
+    var prng = random.init();
+    const rand = prng.random();
+
+    var screen = try Screen.init(ctx);
     defer screen.deinit();
 
     var game = Snake().init(rand);
@@ -42,14 +49,13 @@ pub fn rungame(
         }
 
         game.updateGame(&stats, rand) catch |e| switch (e) {
-            error.Crash => break,
-            error.NoSpace => break,
+            error.Crash, error.NoSpace => break,
         };
 
         game.render(screen, stats);
         screen.refresh();
 
-        std.Thread.sleep(std.time.ns_per_ms * 32);
+        std.Thread.sleep(std.time.ns_per_ms * 128);
     }
 
     return stats;
@@ -59,21 +65,22 @@ pub fn Snake() type {
     return struct {
         const bodylength = Screen.worldarea;
         const Direction = enum { LEFT, DOWN, UP, RIGHT };
-        const Body = std.BoundedArray(Screen.WorldPixel, bodylength);
 
         const Player = struct {
             direction: Direction,
 
-            body: Body,
+            body: [bodylength]Screen.WorldPixel,
+            body_size: usize,
             body_end: usize,
 
             pub fn init(x: i64, y: i64) !@This() {
-                var body = Body.init(1) catch unreachable;
-                body.set(0, try Screen.WorldPixel.init(x, y));
+                var body: [bodylength]Screen.WorldPixel = undefined;
+                body[0] = try Screen.WorldPixel.init(x, y);
 
                 return .{
                     .direction = Direction.RIGHT,
                     .body = body,
+                    .body_size = 1,
                     .body_end = 0,
                 };
             }
@@ -117,21 +124,26 @@ pub fn Snake() type {
             }
 
             pub fn moveTo(self: *@This(), next: Screen.WorldPixel) void {
-                self.body_end = (self.body_end + 1) % self.body.len;
-                self.body.set(self.body_end, next);
+                self.body_end = (self.body_end + 1) % self.body_size;
+                self.body[self.body_end] = next;
             }
 
             pub fn moveToExtend(self: *@This(), next: Screen.WorldPixel) error{SnakeTooBig}!void {
                 self.body_end += 1;
-                self.body.insert(self.body_end, next) catch return error.SnakeTooBig;
+                self.body_size += 1;
+
+                if (self.body_size >= self.body.len) return error.SnakeTooBig;
+
+                std.mem.copyBackwards(Screen.WorldPixel, self.body[(self.body_end + 1)..self.body_size], self.body[self.body_end..(self.body_size - 1)]);
+                self.body[self.body_end] = next;
             }
 
             pub fn getHead(self: @This()) Screen.WorldPixel {
-                return self.body.get(self.body_end);
+                return self.body[self.body_end];
             }
 
             pub fn onBody(self: @This(), point: Screen.WorldPixel) bool {
-                for (0.., self.body.buffer[0..self.body.len]) |i, b| {
+                for (0.., self.body[0..self.body_size]) |i, b| {
                     if (i != self.body_end and std.meta.eql(b, point)) return true;
                 }
 
@@ -139,7 +151,7 @@ pub fn Snake() type {
             }
 
             pub fn render(self: @This(), screen: Screen) void {
-                for (self.body.slice()) |pos| screen.drawPixel(pos, c.NCURSES_ACS('0'));
+                for (self.body[0..self.body_size]) |pos| screen.drawPixel(pos, c.NCURSES_ACS('0'));
             }
         };
 
@@ -181,7 +193,7 @@ pub fn Snake() type {
 
         pub fn init(rand: std.Random) @This() {
             const player = Player.init(0, 0) catch unreachable;
-            const apple = Apple.random(rand, player.body.constSlice()) catch unreachable; // This could result in a crash if the area is 1x1, but this will not happen
+            const apple = Apple.random(rand, player.body[0..player.body_size]) catch unreachable; // This could result in a crash if the area is 1x1, but this will not happen
 
             return .{
                 .player = player,
@@ -195,7 +207,7 @@ pub fn Snake() type {
             if (std.meta.eql(next, self.apple.pos)) {
                 stats.eatApple();
                 self.player.moveToExtend(next) catch unreachable; // Since the next cell MUST be a body => already handled before
-                self.apple = Apple.random(rand, self.player.body.constSlice()) catch return error.NoSpace;
+                self.apple = Apple.random(rand, self.player.body[0..self.player.body_size]) catch return error.NoSpace;
             } else {
                 self.player.moveTo(next);
             }
@@ -232,8 +244,8 @@ pub fn Stats() type {
             self.apples_eaten += 1;
         }
 
-        pub fn printScore(self: @This(), stdoutFile: anytype) void {
-            stdoutFile.print("Apples eaten: {d}\n", .{self.apples_eaten}) catch err.termIOError();
+        pub fn getStat(self: @This()) struct { eaten: u64 } {
+            return .{ .eaten = self.apples_eaten };
         }
     };
 }
