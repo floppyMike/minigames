@@ -174,9 +174,11 @@ pub fn Snake() type {
                 var rand_pos = rand.intRangeAtMost(u64, 0, avail_length - 1);
                 var nocollision_pos: u64 = 0;
 
-                while (rand_pos > 0) {
-                    if (!map.isSet(nocollision_pos)) rand_pos -= 1;
+                while (true) {
+                    while (map.isSet(nocollision_pos)) nocollision_pos += 1;
+                    if (rand_pos == 0) break;
                     nocollision_pos += 1;
+                    rand_pos -= 1;
                 }
 
                 const pos = Screen.WorldPixel.fromLinearPos(nocollision_pos) catch unreachable; // Should always be in bounds
