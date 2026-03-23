@@ -5,6 +5,7 @@ const err = @import("error.zig");
 const scat = @import("scat.zig");
 const pong = @import("pong.zig");
 const snake = @import("snake.zig");
+const tetris = @import("tetris.zig");
 
 pub fn main() void {
     //
@@ -27,6 +28,9 @@ pub fn main() void {
         }, .{
             .name = "scat",
             .desc = "Also Thiry One, using a 52 card deck approach 31 points as close as possible.",
+        }, .{
+            .name = "tetris",
+            .desc = "A game about placing blocks in a full line.",
         }, .{
             .name = "snake",
             .desc = "A dynamic game of eating apples and growing in length.",
@@ -55,6 +59,7 @@ pub fn main() void {
     if (args.scat) options |= 1;
     if (args.pong) options |= 2;
     if (args.snake) options |= 4;
+    if (args.tetris) options |= 8;
 
     var ctxErr: err.CriticalErrorContext = undefined;
 
@@ -62,6 +67,7 @@ pub fn main() void {
         1 => scat.run(),
         2 => pong.run(&ctxErr),
         4 => snake.run(&ctxErr),
+        8 => tetris.run(&ctxErr),
 
         0 => err.noGame(&stderr.interface),
         else => err.tooManyGames(&stderr.interface),

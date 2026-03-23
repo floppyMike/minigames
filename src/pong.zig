@@ -6,7 +6,7 @@ const err = @import("error.zig");
 const console = @import("console.zig");
 const random = @import("prng.zig");
 
-const Screen = scn.Curses(32, 96);
+const Screen = scn.Curses(32, 96, 2);
 
 //
 // Game General
@@ -109,7 +109,7 @@ pub fn Pong() type {
                     const top = getPaddleTop(y);
                     const bottom = getPaddleBottom(y);
 
-                    if (!Screen.contains(posx, top) or !Screen.contains(posx, bottom)) return error.OutOfBounds;
+                    if (!Screen.WorldBorder.contains(posx, top) or !Screen.WorldBorder.contains(posx, bottom)) return error.OutOfBounds;
 
                     return .{ .posy = y };
                 }

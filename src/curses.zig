@@ -1,6 +1,7 @@
 const std = @import("std");
 const c = @import("c.zig").c;
 const err = @import("error.zig");
+const mth = @import("math.zig");
 
 //
 // Curses Input
@@ -16,9 +17,7 @@ pub fn getInputNonBlocking() c_int {
     return c.getch();
 }
 
-pub fn Curses(comptime termrows: comptime_int, comptime termcols: comptime_int) type {
-    const pixelwidth = 2;
-
+pub fn Curses(comptime termrows: comptime_int, comptime termcols: comptime_int, comptime pixelwidth: comptime_int) type {
     if (termcols < 2) @compileError("Game must be at least 2 wide.");
     if (termrows < 2) @compileError("Game must be at least 2 high.");
 
@@ -30,110 +29,26 @@ pub fn Curses(comptime termrows: comptime_int, comptime termcols: comptime_int) 
 
         pub const worldarea = worldcols * worldrows;
 
-        //
-        // Collisions
-        //
+        pub const WorldBorder = mth.RectBounds(worldrows, worldcols);
 
-        pub const Bounds = packed struct(u4) {
-            left: bool,
-            up: bool,
-            down: bool,
-            right: bool,
-
-            const init: Bounds = @bitCast(@as(u4, 0));
-        };
-
-        pub fn check(x: i64, y: i64) Bounds {
-            var b = Bounds.init;
-
-            b.left = x < 0;
-            b.up = y < 0;
-            b.right = x >= worldcols;
-            b.down = y >= worldrows;
-
-            return b;
-        }
-
-        pub fn contains(x: i64, y: i64) bool {
-            return Bounds.init == check(x, y);
-        }
-
-        pub fn containsTerm(x: u64, y: u64) bool {
-            return x > 0 and y > 0 and x < termcols - 1 and y < termrows - 1;
-        }
-
-        pub fn checkF(x: f64, y: f64) Bounds {
-            return check(@intFromFloat(x), @intFromFloat(y));
-        }
-
-        pub fn containsF(x: f64, y: f64) bool {
-            return contains(@intFromFloat(x), @intFromFloat(y));
-        }
-
-        //
-        // Pixel Types
-        //
-
-        pub const WorldPixelF = struct {
-            x: f64,
-            y: f64,
-
-            pub fn init(x: f64, y: f64) !@This() {
-                return if (containsF(x, y)) .{ .x = x, .y = y } else error.OutOfBounds;
-            }
-
-            pub fn safeInit(x: f64, y: f64) !@This() {
-                return WorldPixelF.init(x + 0.5, y + 0.5); // Init in the middle to be more numerically resistant
-            }
-
-            pub fn shift(self: @This(), dx: f64, dy: f64) !@This() {
-                return WorldPixelF.init(self.x + dx, self.y + dy);
-            }
-
-            pub fn toInt(self: @This()) WorldPixel {
-                return WorldPixel.init(@intFromFloat(self.x), @intFromFloat(self.y)) catch unreachable; // Should always be in a valid position
-            }
-        };
-
-        pub const WorldPixel = struct {
-            x: i64,
-            y: i64,
-
-            pub fn init(x: i64, y: i64) !@This() {
-                return if (contains(x, y)) .{ .x = x, .y = y } else error.OutOfBounds;
-            }
-
-            pub fn linearPos(self: @This()) u64 {
-                return @intCast(self.x + self.y * worldcols);
-            }
-
-            pub fn fromLinearPos(xy: u64) !@This() {
-                return WorldPixel.init(@intCast(xy % worldcols), @intCast(xy / worldcols));
-            }
-
-            pub fn shift(self: @This(), dx: i64, dy: i64) !@This() {
-                return WorldPixel.init(self.x + dx, self.y + dy);
-            }
-
-            pub fn termPixel(self: @This()) [pixelwidth]TermPixel {
-                var pixels: [pixelwidth]TermPixel = undefined;
-                inline for (&pixels, 0..) |*p, i| p.* = TermPixel.init(@intCast(self.x * pixelwidth + 1 + i), @intCast(self.y + 1)) catch unreachable; // WorldPixel is already in a valid spot
-                return pixels;
-            }
-        };
+        pub const WorldPixel = mth.Pixel(worldrows, worldcols);
+        pub const WorldPixelF = mth.PixelF(worldrows, worldcols);
 
         pub const TermPixel = struct {
             x: u64,
             y: u64,
 
             pub fn init(x: u64, y: u64) !@This() {
-                return if (containsTerm(x, y)) .{ .x = x, .y = y } else error.OutOfBounds;
+                const fits = x > 0 and y > 0 and x < termcols - 1 and y < termrows - 1;
+                return if (fits) .{ .x = x, .y = y } else error.OutOfBounds;
             }
         };
 
-        //
-        // Curses Terminal
-        //
+        pub fn world2term(wld: WorldPixel) [pixelwidth]TermPixel {
+            var pixels: [pixelwidth]TermPixel = undefined;
+            inline for (&pixels, 0..) |*p, i| p.* = TermPixel.init(@intCast(wld.x * pixelwidth + 1 + i), @intCast(wld.y + 1)) catch unreachable; // WorldPixel is already in a valid spot
+            return pixels;
+        }
 
         gamewin: ?*c.WINDOW,
 
@@ -203,14 +118,14 @@ pub fn Curses(comptime termrows: comptime_int, comptime termcols: comptime_int) 
         }
 
         pub fn drawPixel(self: @This(), xy: WorldPixel, ch: c.chtype) void {
-            for (xy.termPixel()) |hp| self.drawHalfPixel(hp, ch);
+            for (world2term(xy)) |hp| self.drawHalfPixel(hp, ch);
         }
 
         pub fn drawFilledBox(self: @This(), from: WorldPixel, to: WorldPixel, ch: c.chtype) void {
-            const fy: usize = @intCast(from.y);
+            const tx: usize = @intCast(to.x);
             const ty: usize = @intCast(to.y);
             const fx: usize = @intCast(from.x);
-            const tx: usize = @intCast(to.x);
+            const fy: usize = @intCast(from.y);
 
             for (fy..(ty + 1)) |y| for (fx..(tx + 1)) |x| {
                 const ix: i64 = @intCast(x);

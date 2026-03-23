@@ -10,8 +10,7 @@ const gamerows = 32;
 const gamecols = 96;
 const pixelwidth = 2;
 
-const WorldSpace = scn.WorldSpace(gamecols, gamerows, pixelwidth);
-const Screen = scn.Curses(gamerows, gamecols);
+const Screen = scn.Curses(gamerows, gamecols, pixelwidth);
 
 pub fn run(ctx: *err.CriticalErrorContext) err.CriticalError!void {
     const stats = try rungame(ctx);
